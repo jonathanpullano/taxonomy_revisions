@@ -1,0 +1,61 @@
+<?php
+
+/**
+ * Implementation of hook_taxonomy
+ * This is the hook where all the work gets done.
+ *
+ * NOT: In Drupal 7, this is replaceced by several functions,
+ * one for each op and type. For example: hook_taxonomy_term_load().
+ *
+ * The op has three possible values: delete, insert, and update.
+ * The type can be: term, or vocabulary
+ * The contents of the array vary based on what the type and op are,
+ * but contain the information about the object being modified.
+ **/
+function taxonomy_revisions_taxonomy($op, $type, $array = NULL) {
+  //Drupal convention normally dictates to use a switch statment here,
+  //however, this would be very messy.
+  $function = "taxonomy_revisions_{$type}_{$op}";
+  call_user_func($function, $array);
+}
+
+//@pullano: Ask what would core do?
+
+function taxonomy_revisions_vocabulary_delete($vocabulary) {
+  
+}
+
+function taxonomy_revisions_vocabulary_insert($form_values {
+
+}
+
+function taxonomy_revisions_vocabulary_update($form_values) {
+
+}
+
+function taxonomy_revisions_term_delete($term) {
+
+}
+
+function taxonomy_revisions_term_insert($form_values) {
+  drupal_write_record('term_revisions', array(
+                        'tid' => $form_values['tid']
+                        '';
+}
+
+function taxonomy_revisions_term_update($form_values) {
+
+}
+
+/**
+ * Implementation of hook_form_alter()
+ */
+function taxonomy_revisions_form_alter($form, $form_state, $form_id) {
+  dsm($form_id);
+  switch($form_id) {
+    case "taxonomy_term_form":
+      
+    break;
+  }
+}
+

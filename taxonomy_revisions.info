@@ -1,0 +1,4 @@
+name = taxonomy_revisions
+description = Allows you to create revisions for taxonomy terms and vocabularies
+package = Evolving Web
+core = 6.x

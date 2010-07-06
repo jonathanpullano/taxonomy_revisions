@@ -1,0 +1,44 @@
+<?php
+
+/**
+ * Implementation of hook install()
+ * This hook is called when a module is first installed
+ */
+function taxonomy_revisions_install() {
+  drupal_install_schema('taxonomy_revisions');
+}
+
+function taxonomy_revisions_uninstall() {
+
+}
+
+/**
+ * Implementation of hook_schema()
+ * Defines a set of database tables via the schema API
+ */
+function taxonomy_revisions_schema() {
+  $schema['term_revisions'] = array(
+    'description' => 'Stores revisions for a taxonomy term',
+    'fields' => array(
+      'tid' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'description' => t('taxonomy term id'),
+      ),
+      'tvid' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'description' => t('term version id'),
+      ),
+    ),
+  );
+  return $schema;
+}
+
+/**
+ * Consider a hook_update_N
+ **/
+
+/**
+ * NB: Discussion of caveats of update, schema
+ * */
