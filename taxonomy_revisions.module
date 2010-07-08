@@ -14,7 +14,7 @@
  **/
 function taxonomy_revisions_taxonomy($op, $type, $array = NULL) {
   //Drupal convention normally dictates to use a switch statment here,
-  //however, this would be very messy.
+  //but this is very messy. This approach improves code readability.
   $function = "taxonomy_revisions_{$type}_{$op}";
   call_user_func($function, $array);
 }
@@ -22,27 +22,37 @@ function taxonomy_revisions_taxonomy($op, $type, $array = NULL) {
 //@pullano: Ask what would core do?
 
 function taxonomy_revisions_vocabulary_delete($vocabulary) {
-  
+  //TODO: Write me   
 }
 
-function taxonomy_revisions_vocabulary_insert($form_values {
-
+function taxonomy_revisions_vocabulary_insert($form_values) {
+  //TODO: Write me
 }
 
 function taxonomy_revisions_vocabulary_update($form_values) {
-
+  //TODO: Write me
 }
 
 function taxonomy_revisions_term_delete($term) {
-
+  db_query('DELETE FROM {term_revisions} WHERE tid = %d', $term->tid);
 }
+
 
 function taxonomy_revisions_term_insert($form_values) {
-  drupal_write_record('term_revisions', array(
-                        'tid' => $form_values['tid']
-                        '';
+  dsm($form_values);
+  //drupal_write_record('term_revisions', array(
+  //                      'tid' => $form_values['term']['tid'],
+  //                      '';
 }
 
+/** 
+ * On an update, we take the old value that was stored in the term_data
+ * table and move it into the term_revisions table. Note that the taxonomy
+ * module will still overwrite the current entry in the term_data table.
+ * By allowing the term_data table to always keep the "current revision"
+ * we guarentee that Drupal will always find the latest revision when
+ * it looks up the term.
+ */
 function taxonomy_revisions_term_update($form_values) {
 
 }
@@ -51,11 +61,78 @@ function taxonomy_revisions_term_update($form_values) {
  * Implementation of hook_form_alter()
  */
 function taxonomy_revisions_form_alter($form, $form_state, $form_id) {
-  dsm($form_id);
+  $term = menu_get_object('term');
   switch($form_id) {
-    case "taxonomy_term_form":
-      
+    case "taxonomy_form_term":
+    $form['revision_information'] = array(
+      '#type' => 'fieldset',
+      '#title' => 'Revision information',
+      '#collapsible' => 'TRUE',
+      '#collapsed' => $term->tvid,
+      '#weight' => 1,
+      'revision' => array(
+        '#type' => 'checkbox',
+        '#title' => 'Create new revision',
+        '#default_value' => 'FALSE',
+      ),
+      'log' => array(
+        '#type' => 'textarea',
+        '#title' => 'Log message',
+        '#description' => t('An explanation of the additions or updates being made to help other authors understand your motivations.'),
+        '#rows' => 2,
+      ),
+    );
+    //@pullano is this a good idea?
+    //This is the result of a deficiency in drupal
+    $form['identification']['#weight'] = 0;
+    $form['advanced']['#weight'] = 2;
+    $form['submit']['#weight'] = 3;
+    $form['delete']['#weight'] = 3;
     break;
   }
+}
+
+/**
+ * Implementation of hook_nodeapi
+ *
+ * Note: in Drupal 7 this is replaced with 
+ */
+function taxonomy_revisions_nodeapi($node, $op, $a3 = NULL, $a4 = NULL) {
+  switch($op) {
+    case "view":
+       
+    break;
+  }
+}
+
+/**
+ * API Function: get the vid of the newest revision associated with the term
+ * @param mixed The term to look up
+ * @result mixed The tvid of the term being fetched, or FALSE on an error
+ */
+function _taxonomy_revisions_get_term_revision($term) {
+  //It is often useful to provide the user of an API function with many ways to call it.
+  //Here we require a term to fetch the tid, but the user of the function can provide the
+  //term in many different ways
+  if (is_array($term)) {
+    $tid = $term['tid'];
+  } elseif (is_object($term)) {
+    $tid = $term->tid;
+  } elseif (is_string($term)) {
+    //Note that the Drupal may have multiple terms with the same name!
+    $taxonomy_term = taxonomy_get_term_by_name($term); 
+    if (count($taxonomy_term) != 1) {
+      return FALSE;
+    }
+    $tid = $taxonomy_term[0]->tid;
+  } elseif (is_numeric($term)) {
+    $tid = $term;
+  }
+  //Something has gone horribly wrong, let's bail!
+  if (!is_numeric($tid)) {
+    return FALSE;
+  }
+  
+  return db_result(db_query("SELECT MAX(tvid) FROM {term_revisions} WHERE tid = '%d'", $tid));
 }
 
