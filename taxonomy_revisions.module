@@ -33,16 +33,11 @@ function taxonomy_revisions_vocabulary_update($form_values) {
   //TODO: Write me
 }
 
+/**
+ * When a term is deleted, delete its revisions
+ */
 function taxonomy_revisions_term_delete($term) {
   db_query('DELETE FROM {term_revisions} WHERE tid = %d', $term->tid);
-}
-
-
-function taxonomy_revisions_term_insert($form_values) {
-  dsm($form_values);
-  //drupal_write_record('term_revisions', array(
-  //                      'tid' => $form_values['term']['tid'],
-  //                      '';
 }
 
 /** 
@@ -54,7 +49,9 @@ function taxonomy_revisions_term_insert($form_values) {
  * it looks up the term.
  */
 function taxonomy_revisions_term_update($form_values) {
-
+  $record = db_result(db_query('SELECT tid, vid, name, description, weight FROM {term_data} WHERE tid = "%d"'));
+  //Note that tvid is not set, but drupal_write_record will increment auto_incrementing fields.
+  drupal_write_record('term_revisions', $record);
 }
 
 /**

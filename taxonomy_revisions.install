@@ -17,18 +17,57 @@ function taxonomy_revisions_uninstall() {
  * Defines a set of database tables via the schema API
  */
 function taxonomy_revisions_schema() {
+  //The fields here are a superset of fields from the term_data table.
+  //As such, it might be tempting to call taxonomy_schema here,
+  //as this will save typing, and keep your schema in sync as 
+  //the taxonomy schema changes. However, this is a BAD idea.
+  //If you do this it will be impossible later on to write a
+  //hook_update_N! Different users might have the same version
+  //of your module installed, and yet have different database tables.
+  //@see: http://drupal.org/node/150220
   $schema['term_revisions'] = array(
     'description' => 'Stores revisions for a taxonomy term',
     'fields' => array(
       'tid' => array(
         'type' => 'int',
+        'unsigned' => TRUE,
         'not null' => TRUE,
         'description' => t('taxonomy term id'),
       ),
       'tvid' => array(
-        'type' => 'int',
+         //We use the serial type for auto increment fields.
+         //This expands to int auto_increment in mysql
+        'type' => 'serial',
+        'unsigned' => TRUE,
         'not null' => TRUE,
         'description' => t('term version id'),
+      ),
+      'vid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'The {vocabulary}.vid of the vocabulary to which the term is assigned.',
+      ),
+      'name' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'The term name.',
+      ),
+      'description' => array(
+        'type' => 'text',
+        'not null' => FALSE,
+        'size' => 'big',
+        'description' => 'A description of the term.',
+      ),
+      'weight' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'size' => 'tiny',
+        'description' => 'The weight of this term in relation to other terms.',
       ),
     ),
   );
@@ -41,4 +80,5 @@ function taxonomy_revisions_schema() {
 
 /**
  * NB: Discussion of caveats of update, schema
+ * @see: http://drupal.org/node/150220
  * */
