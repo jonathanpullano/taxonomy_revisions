@@ -22,7 +22,7 @@ function taxonomy_revisions_taxonomy($op, $type, $array = NULL) {
 //@pullano: Ask what would core do?
 
 function taxonomy_revisions_vocabulary_delete($vocabulary) {
-  //TODO: Write me   
+  //TODO: Write me
 }
 
 function taxonomy_revisions_vocabulary_insert($form_values) {
@@ -31,6 +31,22 @@ function taxonomy_revisions_vocabulary_insert($form_values) {
 
 function taxonomy_revisions_vocabulary_update($form_values) {
   //TODO: Write me
+}
+
+/**
+ * Implementation of hook_menu
+ */
+function taxonomy_revisions_menu() {
+  $menu['taxonomy/term/%term/revisions'] = array(
+    'title' => 'Revisions',
+    'page callback' => 'taxonomy_revisions_revision_overview',
+    'page arguments' => array(2),
+    'access callback' => '_term_revision_access',
+    'access arguments' => array(2),
+    'weight' => 2,
+    'file' => 'taxonomy_revisions.pages.inc',
+    'type' => MENU_LOCAL_TASK,
+  );
 }
 
 /**
@@ -117,6 +133,54 @@ function _taxonomy_revisions_get_term_revision($term) {
     return FALSE;
   }
   
-  return db_result(db_query("SELECT MAX(tvid) FROM {term_revisions} WHERE tid = '%d'", $tid));
+  return taxonomy_get_term($tid);
 }
 
+/**
+ * Return a list of all the existing revision numbers.
+ * @see node_revision_list
+ */
+function term_revision_list($term) {
+  $revisions = array();
+  $query_string = <<<EOF
+    SELECT tid, tvid, vid, name, description, weight 
+    FROM {term_revisions} 
+    WHERE tid = "%d" 
+    UNION 
+    SELECT tid, 0 as tvid, vid, name, description, weight
+    FROM {term_data}
+    WHERE tid = "%d"
+EOF;
+  $result = db_query($query_string, $term->tid);
+  while ($revision = db_fetch_object($result)) {
+    $revisions[$revision->tvid] = $revision;
+  }
+  return $revisions;
+}
+
+function _term_revision_access($node, $op = 'view') {
+  static $access = array();
+  if (!isset($access[$node->vid])) {
+    $node_current_revision = node_load($node->nid);
+    $is_current_revision = $node_current_revision->vid == $node->vid;
+    // There should be at least two revisions. If the vid of the given node
+    // and the vid of the current revision differs, then we already have two
+    // different revisions so there is no need for a separate database check.
+    // Also, if you try to revert to or delete the current revision, that's
+    // not good.
+    if ($is_current_revision && (db_result(db_query('SELECT COUNT(vid) FROM {node_revisions} WHERE nid = %d', $node->nid)) == 1 || $op == 'update' || $op == 'delete')) {
+      $access[$node->vid] = FALSE;
+    }
+    elseif (user_access('administer nodes')) {
+      $access[$node->vid] = TRUE;
+    }
+    else {
+      $map = array('view' => 'view revisions', 'update' => 'revert revisions', 'delete' => 'delete revisions');
+      // First check the user permission, second check the access to the
+      // current revision and finally, if the node passed in is not the current
+      // revision then access to that, too.
+      $access[$node->vid] = isset($map[$op]) && user_access($map[$op]) && node_access($op, $node_current_revision) && ($is_current_revision || node_access($op, $node));
+    }
+  }
+  return $access[$node->vid];
+}
