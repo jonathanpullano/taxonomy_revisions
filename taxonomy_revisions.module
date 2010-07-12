@@ -1,10 +1,52 @@
 <?php
 
 /**
+ * Implementation of hook_menu
+ */
+function taxonomy_revisions_menu() {
+  $menu['taxonomy/term/%term/revisions'] = array(
+    'title' => 'Revisions',
+    'page callback' => 'taxonomy_revisions_revision_overview',
+    'page arguments' => array(2),
+    'access callback' => '_term_revision_access',
+    'access arguments' => array(2),
+    'weight' => 2,
+    'file' => 'taxonomy_revisions.pages.inc',
+    'type' => MENU_LOCAL_TASK,
+  );
+  $items['taxonomy/term/%term/revisions/%/view'] = array(
+    'title' => 'Revisions',
+    'page callback' => 'term_show_revision',
+    'page arguments' => array(2, 4),
+    'access callback' => '_term_revision_access',
+    'access arguments' => array(2, 'view'),
+    'type' => MENU_CALLBACK,
+  );
+  $items['taxonomy/term/%term/revisions/%/revert'] = array(
+    'title' => 'Revert to earlier revision',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('term_revision_revert_confirm', 2, 4),
+    'access callback' => '_term_revision_access',
+    'access arguments' => array(2, 'update'),
+    'file' => 'node.pages.inc',
+    'type' => MENU_CALLBACK,
+  );
+  $items['taxonomy/term/%term/revisions/%/delete'] = array(
+    'title' => 'Delete earlier revision',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('node_revision_delete_confirm', 2, 4),
+    'access callback' => '_term_revision_access',
+    'access arguments' => array(2, 'delete'),
+    'file' => 'node.pages.inc',
+    'type' => MENU_CALLBACK,
+  );
+}
+
+/**
  * Implementation of hook_taxonomy
  * This is the hook where all the work gets done.
  *
- * NOT: In Drupal 7, this is replaceced by several functions,
+ * NOTE: In Drupal 7, this is replaceced by several functions,
  * one for each op and type. For example: hook_taxonomy_term_load().
  *
  * The op has three possible values: delete, insert, and update.
@@ -34,26 +76,14 @@ function taxonomy_revisions_vocabulary_update($form_values) {
 }
 
 /**
- * Implementation of hook_menu
- */
-function taxonomy_revisions_menu() {
-  $menu['taxonomy/term/%term/revisions'] = array(
-    'title' => 'Revisions',
-    'page callback' => 'taxonomy_revisions_revision_overview',
-    'page arguments' => array(2),
-    'access callback' => '_term_revision_access',
-    'access arguments' => array(2),
-    'weight' => 2,
-    'file' => 'taxonomy_revisions.pages.inc',
-    'type' => MENU_LOCAL_TASK,
-  );
-}
-
-/**
  * When a term is deleted, delete its revisions
  */
 function taxonomy_revisions_term_delete($term) {
   db_query('DELETE FROM {term_revisions} WHERE tid = %d', $term->tid);
+}
+
+function taxonomy_revisions_term_insert($form_values) {
+  //TODO: Write me
 }
 
 /** 
@@ -141,25 +171,18 @@ function _taxonomy_revisions_get_term_revision($term) {
 /**
  * API Function: Get a particular revision of a taxonomy term
  */
-function _taxonomy_revisions_get_revision($tvid) {
+function _taxonomy_revisions_get_revision($tvid, $tid = 0) {
   if ($tvid) {
     $query = <<<EOF
       SELECT tid, tvid, vid, name, description, weight 
       FROM {term_revisions} 
       WHERE tvid = "%d"
 EOF;
-  } else {
-    //@TODO damnit! =(
-    $query = <<<EOF
-      SELECT tid, 0 as tvid, vid, name, description, weight
-      FROM {term_data}
-      WHERE tid = "%d"
-EOF;
-  } 
-  $result = db_query($query);
-  while($record = db_fetch_object($result)) {
-
+  } elseif(!$tid) {
+    //If you want to look up a tvid = 0, you must provide a tid
+    return FALSE;
   }
+  return db_result(db_query($query, $tvid));
 }
 
 /**
@@ -186,8 +209,8 @@ EOF;
 
 function _term_revision_access($term) {
   static $access = array();
-  if (!isset($access[$term->tvid])) {
-    $term_current_revision = _taxonomy_revisions_get_term_revision($term->tid);
+  if (!isset($access[$term->tid])) {
+    $term_current_revision = _taxonomy_revisions_get_term_revision(0,$term->tid);
     $is_current_revision = $node_current_revision->vid == $node->vid;
     // There should be at least two revisions. If the vid of the given node
     // and the vid of the current revision differs, then we already have two
