@@ -70,6 +70,8 @@ function taxonomy_revisions_schema() {
         'description' => 'The weight of this term in relation to other terms.',
       ),
     ),
+    'primary key' => array('tvid'),
+    'unique keys' => array('tid' => array('tid')),
   );
   return $schema;
 }

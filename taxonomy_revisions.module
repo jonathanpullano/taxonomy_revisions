@@ -4,42 +4,47 @@
  * Implementation of hook_menu
  */
 function taxonomy_revisions_menu() {
-  $menu['taxonomy/term/%term/revisions'] = array(
+  $items['taxonomy/term/%/view'] = array(
+    'title' => 'View',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+  );
+  $items['taxonomy/term/%/revisions'] = array(
     'title' => 'Revisions',
     'page callback' => 'taxonomy_revisions_revision_overview',
     'page arguments' => array(2),
     'access callback' => '_term_revision_access',
-    'access arguments' => array(2),
+    'access arguments' => array(2, 'view'),
     'weight' => 2,
     'file' => 'taxonomy_revisions.pages.inc',
     'type' => MENU_LOCAL_TASK,
   );
-  $items['taxonomy/term/%term/revisions/%/view'] = array(
+  $items['taxonomy/term/%/revisions/%/view'] = array(
     'title' => 'Revisions',
     'page callback' => 'term_show_revision',
     'page arguments' => array(2, 4),
     'access callback' => '_term_revision_access',
-    'access arguments' => array(2, 'view'),
+    'access arguments' => array('view', 2, 4),
     'type' => MENU_CALLBACK,
   );
-  $items['taxonomy/term/%term/revisions/%/revert'] = array(
+  $items['taxonomy/term/%/revisions/%/revert'] = array(
     'title' => 'Revert to earlier revision',
     'page callback' => 'drupal_get_form',
     'page arguments' => array('term_revision_revert_confirm', 2, 4),
     'access callback' => '_term_revision_access',
-    'access arguments' => array(2, 'update'),
-    'file' => 'node.pages.inc',
+    'access arguments' => array('update', 2, 4),
+    'file' => 'taxonomy_revisions.pages.inc',
     'type' => MENU_CALLBACK,
   );
-  $items['taxonomy/term/%term/revisions/%/delete'] = array(
+  $items['taxonomy/term/%/revisions/%/delete'] = array(
     'title' => 'Delete earlier revision',
     'page callback' => 'drupal_get_form',
     'page arguments' => array('node_revision_delete_confirm', 2, 4),
     'access callback' => '_term_revision_access',
-    'access arguments' => array(2, 'delete'),
-    'file' => 'node.pages.inc',
+    'access arguments' => array('delete', 2, 4),
+    'file' => 'taxonomy_revisions.pages.inc',
     'type' => MENU_CALLBACK,
   );
+  return $items;
 }
 
 /**
@@ -140,29 +145,7 @@ function taxonomy_revisions_form_alter($form, $form_state, $form_id) {
  * @param mixed The term to look up
  * @result mixed The tvid of the term being fetched, or FALSE on an error
  */
-function _taxonomy_revisions_get_term_revision($term) {
-  //It is often useful to provide the user of an API function with many ways to call it.
-  //Here we require a term to fetch the tid, but the user of the function can provide the
-  //term in many different ways
-  if (is_array($term)) {
-    $tid = $term['tid'];
-  } elseif (is_object($term)) {
-    $tid = $term->tid;
-  } elseif (is_string($term)) {
-    //Note that the Drupal may have multiple terms with the same name!
-    $taxonomy_term = taxonomy_get_term_by_name($term); 
-    if (count($taxonomy_term) != 1) {
-      return FALSE;
-    }
-    $tid = $taxonomy_term[0]->tid;
-  } elseif (is_numeric($term)) {
-    $tid = $term;
-  }
-  //Something has gone horribly wrong, let's bail!
-  if (!is_numeric($tid)) {
-    return FALSE;
-  }
-  
+function _taxonomy_revisions_get_term_revision($tid) {
   $term = taxonomy_get_term($tid);
   $term->tvid = 0;
   return $term;
@@ -210,31 +193,31 @@ EOF;
 /**
  * Access callback for term revision pages
  */
-function _term_revision_access($term, $op) {
-  dsm($term);
-  return TRUE;
+function _term_revision_access($op, $tid, $tvid = 0) {
   static $access = array();
-  if (!isset($access[$node->vid])) {
-    $node_current_revision = node_load($node->nid);
-    $is_current_revision = $node_current_revision->vid == $node->vid;
-    // There should be at least two revisions. If the vid of the given node
+  if (!isset($access[$tid . ',' . $tvid])) {
+    $node_current_revision = _taxonomy_revisions_get_revision($node->nid);
+    $is_current_revision = $node_current_revision->vid == $tvid;
+    // There should be at least two revisions. If the vid of the given term 
     // and the vid of the current revision differs, then we already have two
     // different revisions so there is no need for a separate database check.
     // Also, if you try to revert to or delete the current revision, that's
     // not good.
-    if ($is_current_revision && (db_result(db_query('SELECT COUNT(vid) FROM {node_revisions} WHERE nid = %d', $node->nid)) == 1 || $op == 'update' || $op == 'delete')) {
-      $access[$node->vid] = FALSE;
+    if ($is_current_revision && (db_result(db_query('SELECT COUNT(vid) FROM {term_revisions} WHERE tid = %d', $tid)) == 0 || $op == 'update' || $op == 'delete')) {
+      $access[$tid . ',' . $tvid] = FALSE;
     }
-    elseif (user_access('administer nodes')) {
-      $access[$node->vid] = TRUE;
+    elseif (user_access('administer taxonomy')) {
+      $access[$tid . ',' . $tvid] = TRUE;
     }
     else {
+      //@todo: Do we want seperate permissions for revising terms and nodes?
       $map = array('view' => 'view revisions', 'update' => 'revert revisions', 'delete' => 'delete revisions');
       // First check the user permission, second check the access to the
       // current revision and finally, if the node passed in is not the current
       // revision then access to that, too.
-      $access[$node->vid] = isset($map[$op]) && user_access($map[$op]) && node_access($op, $node_current_revision) && ($is_current_revision || node_access($op, $node));
+      //@todo: fancier access rules
+      $access[$tid . ',' . $tvid] = isset($map[$op]) && user_access($map[$op]);
     }
   }
-  return $access[$node->vid];
+  return $access[$tid . ',' . $tvid];
 }
