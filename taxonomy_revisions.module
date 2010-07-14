@@ -7,6 +7,7 @@ function taxonomy_revisions_menu() {
   $items['taxonomy/term/%/view'] = array(
     'title' => 'View',
     'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => '0'
   );
   $items['taxonomy/term/%/revisions'] = array(
     'title' => 'Revisions',
@@ -23,7 +24,7 @@ function taxonomy_revisions_menu() {
     'page callback' => 'term_show_revision',
     'page arguments' => array(2, 4),
     'access callback' => '_term_revision_access',
-    'access arguments' => array('view', 2, 4),
+    'access arguments' => array(2, 'view', 4),
     'type' => MENU_CALLBACK,
   );
   $items['taxonomy/term/%/revisions/%/revert'] = array(
@@ -31,19 +32,36 @@ function taxonomy_revisions_menu() {
     'page callback' => 'drupal_get_form',
     'page arguments' => array('term_revision_revert_confirm', 2, 4),
     'access callback' => '_term_revision_access',
-    'access arguments' => array('update', 2, 4),
+    'access arguments' => array(2, 'update', 4),
     'file' => 'taxonomy_revisions.pages.inc',
     'type' => MENU_CALLBACK,
   );
   $items['taxonomy/term/%/revisions/%/delete'] = array(
     'title' => 'Delete earlier revision',
     'page callback' => 'drupal_get_form',
-    'page arguments' => array('node_revision_delete_confirm', 2, 4),
+    'page arguments' => array('term_revision_delete_confirm', 2, 4),
     'access callback' => '_term_revision_access',
-    'access arguments' => array('delete', 2, 4),
+    'access arguments' => array(2, 'delete', 4),
     'file' => 'taxonomy_revisions.pages.inc',
     'type' => MENU_CALLBACK,
   );
+  return $items;
+}
+
+function taxonomy_revisions_menu_alter(&$items) {
+  //@todo fixme
+  if (true) { //variable_get('taxonomy_revisions_enable_edit_link', 1)) {
+    $items['taxonomy/term/%/edit'] = array(
+      'title' => 'Edit',
+      'page arguments' => array(2),
+      'page callback' => 'taxonomy_admin_term_edit',
+      'access arguments' => array('administer taxonomy'),
+      'type' => MENU_LOCAL_TASK,
+      'file' => 'taxonomy.admin.inc',
+      'file path' => 'modules/taxonomy',
+      'weight' => '5',
+    );
+  }
   return $items;
 }
 
@@ -60,35 +78,65 @@ function taxonomy_revisions_menu() {
  * but contain the information about the object being modified.
  **/
 function taxonomy_revisions_taxonomy($op, $type, $array = NULL) {
-  //Drupal convention normally dictates to use a switch statment here,
-  //but this is very messy. This approach improves code readability.
-  $function = "taxonomy_revisions_{$type}_{$op}";
-  call_user_func($function, $array);
-}
+  switch ($type) {
+    case 'term':
+      if ($op == 'delete') {
+        db_query('DELETE FROM {term_revisions} WHERE tid = %d', $array->tid);
+      } else if ($op == 'insert') {
+        $record = array(
+          'tid' => $array['tid'],
+          'timestamp' => time(),
+        );
+        drupal_write_record('term_current_revision', $record);
+      }
+      break;
 
-//@pullano: Ask what would core do?
-
-function taxonomy_revisions_vocabulary_delete($vocabulary) {
-  //TODO: Write me
-}
-
-function taxonomy_revisions_vocabulary_insert($form_values) {
-  //TODO: Write me
-}
-
-function taxonomy_revisions_vocabulary_update($form_values) {
-  //TODO: Write me
+    case 'vocabulary':
+      if ($op == 'delete') {
+        //Write me!
+      }
+      break;
+  }
 }
 
 /**
- * When a term is deleted, delete its revisions
+ * Implementation of hook_form_alter()
  */
-function taxonomy_revisions_term_delete($term) {
-  db_query('DELETE FROM {term_revisions} WHERE tid = %d', $term->tid);
-}
+function taxonomy_revisions_form_alter($form, $form_state, $form_id) {
+  $term = menu_get_object('term');
+  switch($form_id) {
+    case "taxonomy_form_term":
+      if ($form_state['clicked_button']['#value'] != t('Delete')) {
+        $form['revision_information'] = array(
+          '#type' => 'fieldset',
+          '#title' => 'Revision information',
+          '#collapsible' => TRUE,
+          '#collapsed' => TRUE,
+          '#weight' => 1,
+          'revision' => array(
+            '#type' => 'checkbox',
+            '#title' => 'Create new revision',
+          ),
+          'log' => array(
+            '#type' => 'textarea',
+            '#title' => 'Log message',
+            '#description' => t('An explanation of the additions or updates being made to help other authors understand your motivations.'),
+            '#rows' => 2,
+          ),
+        );
+        //The default form submit handler will save over the term_data table, but we need that data first!
+        //Therefore, our submit handler must come first
+        $form['#submit'] = array_merge(array('taxonomy_revisions_taxonomy_form_term_submit'), $form['#submit']);
 
-function taxonomy_revisions_term_insert($form_values) {
-  //TODO: Write me
+        //@pullano is this a good idea?
+        //This is the result of a deficiency in drupal
+        $form['identification']['#weight'] = 0;
+        $form['advanced']['#weight'] = 2;
+        $form['submit']['#weight'] = 3;
+        $form['delete']['#weight'] = 4;
+      }
+      break;
+  }
 }
 
 /** 
@@ -99,73 +147,83 @@ function taxonomy_revisions_term_insert($form_values) {
  * we guarentee that Drupal will always find the latest revision when
  * it looks up the term.
  */
-function taxonomy_revisions_term_update($form_values) {
-  $record = db_result(db_query('SELECT tid, vid, name, description, weight FROM {term_data} WHERE tid = "%d"'));
-  //Note that tvid is not set, but drupal_write_record will increment auto_incrementing fields.
-  drupal_write_record('term_revisions', $record);
-}
+function taxonomy_revisions_taxonomy_form_term_submit($form, &$form_state) {
+  //If a term already exists, the new revision box is checked and we are not on the delete form
+  if ($form['#term']['tid'] && $form_state['values']['revision'] && $form_state['clicked_button']['#id'] == 'edit-submit') {
+    $tid = $form['#term']['tid']; 
 
-/**
- * Implementation of hook_form_alter()
- */
-function taxonomy_revisions_form_alter($form, $form_state, $form_id) {
-  $term = menu_get_object('term');
-  switch($form_id) {
-    case "taxonomy_form_term":
-    $form['revision_information'] = array(
-      '#type' => 'fieldset',
-      '#title' => 'Revision information',
-      '#collapsible' => 'TRUE',
-      '#collapsed' => $term->tvid,
-      '#weight' => 1,
-      'revision' => array(
-        '#type' => 'checkbox',
-        '#title' => 'Create new revision',
-        '#default_value' => 'FALSE',
-      ),
-      'log' => array(
-        '#type' => 'textarea',
-        '#title' => 'Log message',
-        '#description' => t('An explanation of the additions or updates being made to help other authors understand your motivations.'),
-        '#rows' => 2,
-      ),
-    );
-    //@pullano is this a good idea?
-    //This is the result of a deficiency in drupal
-    $form['identification']['#weight'] = 0;
-    $form['advanced']['#weight'] = 2;
-    $form['submit']['#weight'] = 3;
-    $form['delete']['#weight'] = 3;
-    break;
+    $query = <<<EOF
+      SELECT td.tid, vid, name, description, weight, tvid, log, timestamp
+      FROM {term_data} td INNER JOIN {term_current_revision} tcr
+      ON td.tid = tcr.tid
+      WHERE td.tid = "%d"
+EOF;
+
+    $term_revision = db_fetch_object(db_query($query, $tid));
+    if ($term_revision) {
+      drupal_write_record('term_revisions', $term_revision);
+    }
+
+
+    //Note that tvid is not set, but drupal_write_record will increment auto_incrementing fields.
+    $term_current_revision->log = $form_state['values']['log'];
+    $term_current_revision->tid = $tid;
+    $term_current_revision->timestamp = time();
+    db_query('DELETE FROM term_current_revision WHERE tid = "%d"', $tid);
+    drupal_write_record('term_current_revision', $term_current_revision);
   }
 }
 
 /**
  * API Function: get the vid of the newest revision associated with the term
- * @param mixed The term to look up
+ * @param $tid The term to look up
+ * @param $reset Whether to reset the internal cache
  * @result mixed The tvid of the term being fetched, or FALSE on an error
  */
-function _taxonomy_revisions_get_term_revision($tid) {
-  $term = taxonomy_get_term($tid);
-  $term->tvid = 0;
-  return $term;
+function _taxonomy_revisions_get_current_tvid($tid, $reset = FALSE) {
+  //@todo make note of new caching mechanism in D7
+  static $term_revisions = array();
+
+  if ($reset) {
+    $term_revisions = array();
+  }
+
+  if (!isset($terms[$tid])) {
+    $term_revisions[$tid] = db_result(db_query('SELECT tvid FROM {term_current_revision} WHERE tid = %d', $tid));
+  }
+
+  return $term_revisions[$tid];
 }
 
 /**
  * API Function: Get a particular revision of a taxonomy term
  */
-function _taxonomy_revisions_get_revision($tvid, $tid = 0) {
-  if ($tvid) {
+function _taxonomy_revisions_get_term_revision($tvid, $reset = FALSE) {
+  static $term_revisions = array();
+
+  if ($reset) {
+    $term_revisions = array();
+  }
+
+  if (!isset($terms[$tvid])) {
     $query = <<<EOF
-      SELECT tid, tvid, vid, name, description, weight 
-      FROM {term_revisions} 
+      SELECT td.tid, tvid, vid, name, description, weight, log, timestamp
+      FROM {term_data} td INNER JOIN {term_current_revision} tcr
+      WHERE tcr.tvid = "%d"
+EOF;
+
+    if ($record = db_fetch_object(db_query($query, $tvid))) {
+      $term_revisions[$tvid] = $record; 
+      return $record;
+    }
+    $query = <<<EOF
+      SELECT tid, tvid, vid, name, description, weight, log, timestamp 
+      FROM {term_revisions}
       WHERE tvid = "%d"
 EOF;
-  } elseif(!$tid) {
-    //If you want to look up a tvid = 0, you must provide a tid
-    return FALSE;
+    $term_revisions[$tvid] = db_fetch_object(db_query($query, $tvid));
   }
-  return db_result(db_query($query, $tvid));
+  return $term_revisions[$tvid];
 }
 
 /**
@@ -175,15 +233,15 @@ EOF;
 function term_revision_list($term) {
   $revisions = array();
   $query_string = <<<EOF
-    SELECT tid, tvid, vid, name, description, weight 
+    SELECT tid, tvid, vid, name, description, weight, log, timestamp 
     FROM {term_revisions} 
     WHERE tid = "%d" 
     UNION 
-    SELECT tid, 0 as tvid, vid, name, description, weight
-    FROM {term_data}
-    WHERE tid = "%d"
+    SELECT td.tid, tvid, vid, name, description, weight, log, timestamp
+    FROM {term_data} td INNER JOIN {term_current_revision} tcr
+    WHERE td.tid = "%d"
 EOF;
-  $result = db_query($query_string, $term->tid);
+  $result = db_query($query_string, $term->tid, $term->tid);
   while ($revision = db_fetch_object($result)) {
     $revisions[$revision->tvid] = $revision;
   }
@@ -193,11 +251,15 @@ EOF;
 /**
  * Access callback for term revision pages
  */
-function _term_revision_access($op, $tid, $tvid = 0) {
+function _term_revision_access($tid, $op, $tvid = 0) {
+  if (!$tvid) {
+    $tvid = _taxonomy_revisions_get_current_tvid($tid);
+  }
   static $access = array();
   if (!isset($access[$tid . ',' . $tvid])) {
-    $node_current_revision = _taxonomy_revisions_get_revision($node->nid);
-    $is_current_revision = $node_current_revision->vid == $tvid;
+    $term_current_revision = _taxonomy_revisions_get_term_revision($tvid);
+    $is_current_revision = $term_current_revision->tvid == $tvid;
+
     // There should be at least two revisions. If the vid of the given term 
     // and the vid of the current revision differs, then we already have two
     // different revisions so there is no need for a separate database check.
@@ -210,12 +272,10 @@ function _term_revision_access($op, $tid, $tvid = 0) {
       $access[$tid . ',' . $tvid] = TRUE;
     }
     else {
-      //@todo: Do we want seperate permissions for revising terms and nodes?
+      //@todo: Do we want seperate permissions for revising terms and nodes? Ya!
+      
+      //Check if the user has permission to perform this specific op
       $map = array('view' => 'view revisions', 'update' => 'revert revisions', 'delete' => 'delete revisions');
-      // First check the user permission, second check the access to the
-      // current revision and finally, if the node passed in is not the current
-      // revision then access to that, too.
-      //@todo: fancier access rules
       $access[$tid . ',' . $tvid] = isset($map[$op]) && user_access($map[$op]);
     }
   }

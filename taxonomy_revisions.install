@@ -2,14 +2,16 @@
 
 /**
  * Implementation of hook install()
- * This hook is called when a module is first installed
  */
 function taxonomy_revisions_install() {
   drupal_install_schema('taxonomy_revisions');
 }
 
+/**
+ * Implementations of hook_uninstall()
+ */
 function taxonomy_revisions_uninstall() {
-
+  drupal_uninstall_schema('taxonomy_revisions');
 }
 
 /**
@@ -35,9 +37,7 @@ function taxonomy_revisions_schema() {
         'description' => t('taxonomy term id'),
       ),
       'tvid' => array(
-         //We use the serial type for auto increment fields.
-         //This expands to int auto_increment in mysql
-        'type' => 'serial',
+        'type' => 'int',
         'unsigned' => TRUE,
         'not null' => TRUE,
         'description' => t('term version id'),
@@ -69,9 +69,53 @@ function taxonomy_revisions_schema() {
         'size' => 'tiny',
         'description' => 'The weight of this term in relation to other terms.',
       ),
+      'log' => array(
+        'type' => 'text',
+        'not null' => TRUE,
+        'size' => 'big',
+        'description' => 'The log entry explaining the changes in this version.',
+      ),
+      'timestamp' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'A Unix timestamp indicating when this version was created.',
+      ),
     ),
     'primary key' => array('tvid'),
-    'unique keys' => array('tid' => array('tid')),
+  );
+  $schema['term_current_revision'] = array(
+    'description' => t('Stores revision information associated with the current revision of a term'),
+    'fields' => array(
+      'tid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => t('taxonomy term id'),
+      ),
+      'tvid' => array(
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => t('term version id'),
+      ),
+      'log' => array(
+        'type' => 'text',
+        'not null' => TRUE,
+        'size' => 'big',
+        'description' => 'The log entry explaining the changes in this version.',
+      ),
+      'timestamp' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'A Unix timestamp indicating when this version was created.',
+      ),
+    ),
+    'primary key' => array('tvid'),
+    'unique keys' => array(
+      'tid' => array('tid'),
+    ),
   );
   return $schema;
 }
