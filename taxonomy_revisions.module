@@ -83,8 +83,10 @@ function taxonomy_revisions_taxonomy($op, $type, $array = NULL) {
       if ($op == 'delete') {
         db_query('DELETE FROM {term_revisions} WHERE tid = %d', $array->tid);
       } else if ($op == 'insert') {
+        global $user;
         $record = array(
           'tid' => $array['tid'],
+          'uid' => $user->uid,
           'timestamp' => time(),
         );
         drupal_write_record('term_current_revision', $record);
@@ -151,27 +153,50 @@ function taxonomy_revisions_taxonomy_form_term_submit($form, &$form_state) {
   //If a term already exists, the new revision box is checked and we are not on the delete form
   if ($form['#term']['tid'] && $form_state['values']['revision'] && $form_state['clicked_button']['#id'] == 'edit-submit') {
     $tid = $form['#term']['tid']; 
+    $term_revision = array(
+      'tid' => $form['#term']['tid'],
+      'log' => $form_state['values']['log'],
+    );
+    _taxonomy_revisions_term_save_revision($term_revision);
+  }
+}
 
-    $query = <<<EOF
-      SELECT td.tid, vid, name, description, weight, tvid, log, timestamp
-      FROM {term_data} td INNER JOIN {term_current_revision} tcr
-      ON td.tid = tcr.tid
-      WHERE td.tid = "%d"
+function _taxonomy_revisions_term_save_revision($term_revision) {
+  if (is_array($term_revision)) {
+    $term_revision = (object)$term_revision;
+  }
+  if (!$term_revision->uid) {
+    global $user;
+    $term_revision->uid = $user->uid;
+  } 
+  if (!$term_revision->timestamp) {
+    $term_revision->timestamp = time();
+  }
+
+  //We may have terms in term_data that don't have matches in term_current_revision if terms existed before the module was enabled
+  $current = !db_result(db_query("SELECT count(tid) FROM {term_current_revision} WHERE tid = '%d'", $term_revision->tid));
+  if ($current) {
+    $current_revision = array(
+      'tid' => $term_revision->tid,
+    );
+    drupal_write_record('term_current_revision', $current_revision); 
+  }
+
+  $query = <<<EOF
+    SELECT td.tid, vid, uid, name, description, weight, tvid, log, timestamp
+    FROM {term_data} td INNER JOIN {term_current_revision} tcr
+    ON td.tid = tcr.tid
+    WHERE td.tid = "%d"
 EOF;
 
-    $term_revision = db_fetch_object(db_query($query, $tid));
-    if ($term_revision) {
-      drupal_write_record('term_revisions', $term_revision);
-    }
-
-
-    //Note that tvid is not set, but drupal_write_record will increment auto_incrementing fields.
-    $term_current_revision->log = $form_state['values']['log'];
-    $term_current_revision->tid = $tid;
-    $term_current_revision->timestamp = time();
-    db_query('DELETE FROM term_current_revision WHERE tid = "%d"', $tid);
-    drupal_write_record('term_current_revision', $term_current_revision);
+  $fetched_revision = db_fetch_object(db_query($query, $term_revision->tid));
+  if ($fetched_revision) {
+    drupal_write_record('term_revisions', $fetched_revision);
   }
+
+  //drupal_write_record will increment auto_incrementing fields.
+  db_query('DELETE FROM term_current_revision WHERE tid = "%d"', $term_revision->tid);
+  drupal_write_record('term_current_revision', $term_revision);
 }
 
 /**
@@ -188,7 +213,7 @@ function _taxonomy_revisions_get_current_tvid($tid, $reset = FALSE) {
     $term_revisions = array();
   }
 
-  if (!isset($terms[$tid])) {
+  if (!isset($term_revisions[$tid])) {
     $term_revisions[$tid] = db_result(db_query('SELECT tvid FROM {term_current_revision} WHERE tid = %d', $tid));
   }
 
@@ -207,7 +232,7 @@ function _taxonomy_revisions_get_term_revision($tvid, $reset = FALSE) {
 
   if (!isset($terms[$tvid])) {
     $query = <<<EOF
-      SELECT td.tid, tvid, vid, name, description, weight, log, timestamp
+      SELECT td.tid, tvid, vid, uid, name, description, weight, log, timestamp
       FROM {term_data} td INNER JOIN {term_current_revision} tcr
       WHERE tcr.tvid = "%d"
 EOF;
@@ -217,7 +242,7 @@ EOF;
       return $record;
     }
     $query = <<<EOF
-      SELECT tid, tvid, vid, name, description, weight, log, timestamp 
+      SELECT tid, tvid, vid, uid, name, description, weight, log, timestamp 
       FROM {term_revisions}
       WHERE tvid = "%d"
 EOF;
@@ -233,13 +258,13 @@ EOF;
 function term_revision_list($term) {
   $revisions = array();
   $query_string = <<<EOF
-    SELECT tid, tvid, vid, name, description, weight, log, timestamp 
-    FROM {term_revisions} 
-    WHERE tid = "%d" 
-    UNION 
-    SELECT td.tid, tvid, vid, name, description, weight, log, timestamp
-    FROM {term_data} td INNER JOIN {term_current_revision} tcr
+    SELECT td.tid, tvid, vid, td.name as term_name, u.uid, u.name, description, weight, log, timestamp, 1 as current
+    FROM {term_data} td INNER JOIN {term_current_revision} tcr LEFT JOIN {users} u ON tcr.uid = u.uid
     WHERE td.tid = "%d"
+    UNION 
+    SELECT tid, tvid, vid, tr.name as term_name, u.uid, u.name, description, weight, log, timestamp, 0 as current 
+    FROM {term_revisions} tr LEFT JOIN {users} u ON tr.uid = u.uid
+    WHERE tid = "%d" 
 EOF;
   $result = db_query($query_string, $term->tid, $term->tid);
   while ($revision = db_fetch_object($result)) {
@@ -252,20 +277,17 @@ EOF;
  * Access callback for term revision pages
  */
 function _term_revision_access($tid, $op, $tvid = 0) {
-  if (!$tvid) {
-    $tvid = _taxonomy_revisions_get_current_tvid($tid);
-  }
+  $current_tvid = _taxonomy_revisions_get_current_tvid($tid);
   static $access = array();
   if (!isset($access[$tid . ',' . $tvid])) {
-    $term_current_revision = _taxonomy_revisions_get_term_revision($tvid);
-    $is_current_revision = $term_current_revision->tvid == $tvid;
+    $is_current_revision = $current_tvid == $tvid || !$tvid;
 
     // There should be at least two revisions. If the vid of the given term 
     // and the vid of the current revision differs, then we already have two
     // different revisions so there is no need for a separate database check.
     // Also, if you try to revert to or delete the current revision, that's
     // not good.
-    if ($is_current_revision && (db_result(db_query('SELECT COUNT(vid) FROM {term_revisions} WHERE tid = %d', $tid)) == 0 || $op == 'update' || $op == 'delete')) {
+    if ($is_current_revision && (db_result(db_query('SELECT COUNT(tvid) FROM {term_revisions} WHERE tid = %d', $tid)) == 0 || $op == 'update' || $op == 'delete')) {
       $access[$tid . ',' . $tvid] = FALSE;
     }
     elseif (user_access('administer taxonomy')) {
@@ -280,4 +302,16 @@ function _term_revision_access($tid, $op, $tvid = 0) {
     }
   }
   return $access[$tid . ',' . $tvid];
+}
+
+/**
+ * Wrapper for standard format_date() function that will print "Date unknown" if
+ * given 0 as an argument
+ */
+function _taxonomy_revisions_format_date($timestamp, $type = 'medium', $format = '', $timezone = NULL, $langcode = NULL) {
+  if ($timestamp) {
+    return format_date($timestamp, $type, $format, $timezone, $langcode);
+  } else {
+    return "Date unknown";
+  } 
 }
