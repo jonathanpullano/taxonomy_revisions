@@ -12,11 +12,11 @@ function taxonomy_revisions_revision_overview($tid) {
   $rows = array();
   $revert_permission = FALSE;
   //Unlike with node revisions, we don't have to worry about "restricted formats"
-  if ((user_access('revert revisions') || user_access('administer taxonomy'))) {
+  if ((user_access('revert term revisions') || user_access('administer taxonomy'))) {
     $revert_permission = TRUE;
   }
   $delete_permission = FALSE;
-  if ((user_access('delete revisions') || user_access('administer taxonomy'))) {
+  if ((user_access('delete term revisions') || user_access('administer taxonomy'))) {
     $delete_permission = TRUE;
   }
   foreach ($revisions as $revision) {
@@ -103,4 +103,23 @@ function term_show_revision($tid, $tvid) {
   //@todo taxonomy_select_nodes will need to be fixed for vocabulary revisions
   $output = theme('taxonomy_revisions_term_revision_page', $revision, taxonomy_select_nodes(array($tid), 'or', 0, TRUE));
   return $output;
+}
+
+function taxonomy_revisions_admin_form() {
+  $form['enable_edit'] = array(
+    '#type' => 'checkbox',
+    '#title' => 'Enable edit menu for taxonomy terms',
+    '#default_value' => variable_get('taxonomy_revisions_enable_edit_link', 1),
+    '#description' => 'Allow easier editing of taxonomy terms by creating an edit menu similar to nodes',
+  );
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => 'Save',
+  );
+  return $form;
+}
+
+function taxonomy_revisions_admin_form_submit($form, &$form_state) {
+  variable_set('taxonomy_revisions_enable_edit_link', $form_state['values']['enable_edit']); 
+  menu_rebuild();
 }
