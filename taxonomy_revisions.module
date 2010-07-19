@@ -25,6 +25,7 @@ function taxonomy_revisions_menu() {
     'page arguments' => array(2, 4),
     'access callback' => '_term_revision_access',
     'access arguments' => array(2, 'view', 4),
+    'file' => 'taxonomy_revisions.pages.inc',
     'type' => MENU_CALLBACK,
   );
   $items['taxonomy/term/%/revisions/%/revert'] = array(
@@ -157,11 +158,25 @@ function taxonomy_revisions_taxonomy_form_term_submit($form, &$form_state) {
       'tid' => $form['#term']['tid'],
       'log' => $form_state['values']['log'],
     );
-    _taxonomy_revisions_term_save_revision($term_revision);
+    _taxonomy_revisions_term_save_revision_partial($term_revision);
   }
 }
 
+/**
+ * Saves a new term revision.
+ */
 function _taxonomy_revisions_term_save_revision($term_revision) {
+  db_query('UPDATE {term_data} SET vid = %d, name = "%s", description = "%s", weight = %d WHERE tid = %d', 
+    $term_revision->vid, $term_revision->name, $term_revision->description, $term_revision->weight, $term_revision->tid); 
+  _taxonomy_revisions_term_save_revision_partial($term_revision);
+}
+
+/**
+ * Helper function for saving a new term revision.
+ * Performs all operations except those which touch the term_data table.
+ * This is useful because in some cases Drupal will do this work for us.
+ */
+function _taxonomy_revisions_term_save_revision_partial($term_revision) {
   if (is_array($term_revision)) {
     $term_revision = (object)$term_revision;
   }
@@ -314,4 +329,19 @@ function _taxonomy_revisions_format_date($timestamp, $type = 'medium', $format =
   } else {
     return "Date unknown";
   } 
+}
+
+/**
+ * Implementation of hook_theme()
+ */
+function taxonomy_revisions_theme() {
+  return array(
+    'taxonomy_revisions_term_revision_page' => array(
+      'arguments' => array(
+        'tvid' => array(), 
+        'result' => NULL
+      ),
+      'file' => 'taxonomy_revisions.theme.inc',
+    ),  
+  );
 }

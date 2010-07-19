@@ -8,7 +8,6 @@ function taxonomy_revisions_revision_overview($tid) {
   $header = array(t('Revision'), array('data' => t('Operations'), 'colspan' => 2));
 
   $revisions = term_revision_list($term);
-  dsm($revisions);
 
   $rows = array();
   $revert_permission = FALSE;
@@ -61,8 +60,7 @@ function term_revision_revert_confirm_submit($form, &$form_state) {
   $term_revision->timestamp = time();
   $term_revision->uid = $user->uid;
 
-  //TODO move actual term_data
-  _taxonomy_revisions_term_save_revision($term_revision); 
+  taxonomy_revisions_term_save_revision($term_revision); 
 
   watchdog('content', 'term: reverted %name revision %revision.', array('%name' => $term_revision->name, '%revision' => $term_revision->tvid));
   drupal_set_message(t('term %name has been reverted back to the revision from %revision-date.', array('%name' => $term_revision->name, '%revision-date' => _taxonomy_revisions_format_date($term_revision->timestamp))));
@@ -70,14 +68,11 @@ function term_revision_revert_confirm_submit($form, &$form_state) {
 }
 
 function term_revision_delete_confirm($form_state, $tid, $tvid) {
-  dsm($tvid);
   $form['#term_revision'] = _taxonomy_revisions_get_term_revision($tvid);
-  dsm($form);
   return confirm_form($form, t('Are you sure you want to delete the revision from %revision-date?', array('%revision-date' => _taxonomy_revisions_format_date($term_revision->timestamp))), 'taxonomy/term/'. $term_revision->tid .'/revisions', t('This action cannot be undone.'), t('Delete'), t('Cancel'));
 } 
 
 function term_revision_delete_confirm_submit($form, &$form_state) {
-  dsm($form);
   $term_revision = $form['#term_revision'];
   //We can never delete the current revision, so all revisions will be in the term revisions table
   db_query("DELETE FROM {term_revisions} WHERE tid = %d AND tvid = %d", $term_revision->tid, $term_revision->tvid);
@@ -88,4 +83,24 @@ function term_revision_delete_confirm_submit($form, &$form_state) {
   if (db_result(db_query('SELECT COUNT(tvid) FROM {term_revisions} WHERE tid = %d', $term_revision->tid)) > 1) {
     $form_state['redirect'] .= '/revisions';
   }
+}
+
+function term_show_revision($tid, $tvid) {
+  $revision = _taxonomy_revisions_get_term_revision($tvid);
+  $current = taxonomy_get_term($tid);
+  drupal_set_title(t('Revision of %name from %date', array('%name' => $current->name, '%date' => format_date($revision->timestamp))));
+
+  $breadcrumb = array();
+  //@todo taxonomy_get_parents will need to be fixed for vocabulary revision
+  while ($parents = taxonomy_get_parents($current->tid)) {
+    $current = array_shift($parents);
+    $breadcrumb[] = l($current->name, 'taxonomy/term/'. $current->tid);
+  }
+  $breadcrumb[] = l(t('Home'), NULL);
+  $breadcrumb = array_reverse($breadcrumb);
+  drupal_set_breadcrumb($breadcrumb);
+  
+  //@todo taxonomy_select_nodes will need to be fixed for vocabulary revisions
+  $output = theme('taxonomy_revisions_term_revision_page', $revision, taxonomy_select_nodes(array($tid), 'or', 0, TRUE));
+  return $output;
 }
