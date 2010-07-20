@@ -60,7 +60,7 @@ function term_revision_revert_confirm_submit($form, &$form_state) {
   $term_revision->timestamp = time();
   $term_revision->uid = $user->uid;
 
-  taxonomy_revisions_term_save_revision($term_revision); 
+  _taxonomy_revisions_term_save_revision($term_revision); 
 
   watchdog('content', 'term: reverted %name revision %revision.', array('%name' => $term_revision->name, '%revision' => $term_revision->tvid));
   drupal_set_message(t('term %name has been reverted back to the revision from %revision-date.', array('%name' => $term_revision->name, '%revision-date' => _taxonomy_revisions_format_date($term_revision->timestamp))));
