@@ -18,7 +18,7 @@ function taxonomy_revisions_menu() {
   $items['taxonomy/term/%/view'] = array(
     'title' => 'View',
     'type' => MENU_DEFAULT_LOCAL_TASK,
-    'weight' => '0'
+    'weight' => '0',
   );
   $items['taxonomy/term/%/revisions'] = array(
     'title' => 'Revisions',
